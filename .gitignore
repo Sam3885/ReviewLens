@@ -1,0 +1,21 @@
+
+# Environment secrets
+.env
+.env.*
+!.env.example
+
+# Java / Maven
+**/target/
+*.class
+
+# React / Node
+**/node_modules/
+**/dist/
+
+# Eclipse
+**/.classpath
+**/.project
+**/.settings/
+
+# Logs
+*.log
