@@ -2,6 +2,7 @@
 package com.reviewlens.controller;
 
 import java.io.IOException;
+import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -9,18 +10,26 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.reviewlens.dto.CsvProcessingResult;
+import com.reviewlens.repository.ReviewRepository;
 import com.reviewlens.service.CsvProcessingService;
+import com.reviewlens.service.ReviewAnalysisService;
 
 @RestController
 @RequestMapping("/api/reviews")
-@CrossOrigin(origins = "http://localhost:5173")
 public class CsvUploadController {
 
     private final CsvProcessingService csvProcessingService;
+    private final ReviewAnalysisService reviewAnalysisService;
+    private final ReviewRepository reviewRepository;
 
     public CsvUploadController(
-            CsvProcessingService csvProcessingService) {
+            CsvProcessingService csvProcessingService,
+            ReviewAnalysisService reviewAnalysisService,
+            ReviewRepository reviewRepository) {
+
         this.csvProcessingService = csvProcessingService;
+        this.reviewAnalysisService = reviewAnalysisService;
+        this.reviewRepository = reviewRepository;
     }
 
     @PostMapping("/upload")
@@ -29,21 +38,41 @@ public class CsvUploadController {
 
         try {
 
-            if (file.isEmpty()) {
+            // Step 1: Validate uploaded file
+            if (file == null || file.isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body("Please upload a CSV file.");
             }
 
-            if (!file.getOriginalFilename()
-                    .toLowerCase().endsWith(".csv")) {
+            String filename = file.getOriginalFilename();
+
+            if (filename == null ||
+                    !filename.toLowerCase().endsWith(".csv")) {
+
                 return ResponseEntity.badRequest()
                         .body("Only CSV files are allowed.");
             }
 
-            CsvProcessingResult result =
+            // Step 2: Process and clean CSV data
+            CsvProcessingResult csvResult =
                     csvProcessingService.processCsv(file);
 
-            return ResponseEntity.ok(result);
+            // Step 3: Save cleaned reviews in PostgreSQL
+            reviewRepository.saveAll(csvResult.getReviews());
+
+            // Step 4: Analyze reviews using Gemini
+            var analyses = reviewAnalysisService.analyzeReviews(
+                    csvResult.getReviews()
+            );
+
+            // Step 5: Return combined response
+            Map<String, Object> response = Map.of(
+                    "csvProcessing", csvResult,
+                    "savedReviews", csvResult.getReviews().size(),
+                    "analyses", analyses
+            );
+
+            return ResponseEntity.ok(response);
 
         } catch (IllegalArgumentException e) {
 
@@ -53,8 +82,14 @@ public class CsvUploadController {
         } catch (IOException e) {
 
             return ResponseEntity.status(
-                    HttpStatus.INTERNAL_SERVER_ERROR)
-                    .body("Error processing CSV file.");
+                    HttpStatus.INTERNAL_SERVER_ERROR
+            ).body("Error processing CSV file.");
+
+        } catch (IllegalStateException e) {
+
+            return ResponseEntity.status(
+                    HttpStatus.BAD_GATEWAY
+            ).body("Review analysis failed: " + e.getMessage());
         }
     }
 }

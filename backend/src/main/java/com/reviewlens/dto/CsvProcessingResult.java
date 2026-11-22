@@ -11,6 +11,8 @@ public class CsvProcessingResult {
     private int validReviews;
     private int skippedReviews;
     private int duplicateReviews;
+    private int invalidReviews;
+    private int duplicateReviewIds;
 
     public CsvProcessingResult() {
     }
@@ -25,6 +27,18 @@ public class CsvProcessingResult {
         this.validReviews = validReviews;
         this.skippedReviews = skippedReviews;
         this.duplicateReviews = duplicateReviews;
+    }
+
+    public CsvProcessingResult(List<Review> reviews,
+                               int totalRows,
+                               int validReviews,
+                               int skippedReviews,
+                               int duplicateReviews,
+                               int invalidReviews,
+                               int duplicateReviewIds) {
+        this(reviews, totalRows, validReviews, skippedReviews, duplicateReviews);
+        this.invalidReviews = invalidReviews;
+        this.duplicateReviewIds = duplicateReviewIds;
     }
 
     public List<Review> getReviews() {
@@ -65,5 +79,21 @@ public class CsvProcessingResult {
 
     public void setDuplicateReviews(int duplicateReviews) {
         this.duplicateReviews = duplicateReviews;
+    }
+
+    public int getInvalidReviews() {
+        return invalidReviews;
+    }
+
+    public void setInvalidReviews(int invalidReviews) {
+        this.invalidReviews = invalidReviews;
+    }
+
+    public int getDuplicateReviewIds() {
+        return duplicateReviewIds;
+    }
+
+    public void setDuplicateReviewIds(int duplicateReviewIds) {
+        this.duplicateReviewIds = duplicateReviewIds;
     }
 }

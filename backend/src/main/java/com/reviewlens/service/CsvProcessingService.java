@@ -1,4 +1,3 @@
-
 package com.reviewlens.service;
 
 import java.io.IOException;
@@ -24,16 +23,19 @@ import com.reviewlens.entity.Review;
 @Service
 public class CsvProcessingService {
 
+    private static final Set<String> REQUIRED_HEADERS = Set.of(
+            "review_id", "product", "rating", "date", "review_text");
+
     public CsvProcessingResult processCsv(MultipartFile file)
             throws IOException {
-
         List<Review> reviews = new ArrayList<>();
-
-        Set<String> seenReviewTexts = new HashSet<>();
-
+        Set<String> seenReviewIds = new HashSet<>();
+        Set<String> seenProductReviews = new HashSet<>();
         int totalRows = 0;
         int skippedReviews = 0;
         int duplicateReviews = 0;
+        int invalidReviews = 0;
+        int duplicateReviewIds = 0;
 
         CSVFormat format = CSVFormat.DEFAULT.builder()
                 .setHeader()
@@ -44,85 +46,84 @@ public class CsvProcessingService {
         try (Reader reader = new InputStreamReader(
                     file.getInputStream(), StandardCharsets.UTF_8);
              CSVParser parser = format.parse(reader)) {
-
-            // Validate required CSV columns
-            Set<String> headers = parser.getHeaderMap().keySet();
-
-            if (!headers.containsAll(Set.of(
-                    "review_id", "product", "rating",
-                    "date", "review_text"))) {
+            if (!parser.getHeaderMap().keySet().containsAll(REQUIRED_HEADERS)) {
                 throw new IllegalArgumentException(
                         "CSV is missing one or more required columns.");
             }
 
             for (CSVRecord record : parser) {
-
                 totalRows++;
+                String reviewText = value(record, "review_text");
 
-                String reviewId = record.get("review_id").strip();
-                String product = record.get("product").strip();
-                String ratingText = record.get("rating").strip();
-                String reviewText = record.get("review_text").strip();
-                String dateText = record.get("date").strip();
-
-                // Skip empty review text
+                // Preserve the existing policy: blank review text is skipped.
                 if (reviewText.isEmpty()) {
                     skippedReviews++;
                     continue;
                 }
 
-                // Normalize text for duplicate detection
-                String normalizedText = reviewText
-                        .replaceAll("\\s+", " ")
-                        .toLowerCase(Locale.ROOT);
+                String reviewId = value(record, "review_id");
+                String product = value(record, "product");
+                if (reviewId.isEmpty() || product.isEmpty()) {
+                    skippedReviews++;
+                    invalidReviews++;
+                    continue;
+                }
 
-                // Detect duplicate reviews
-                if (!seenReviewTexts.add(normalizedText)) {
+                if (!seenReviewIds.add(reviewId)) {
+                    skippedReviews++;
+                    duplicateReviews++;
+                    duplicateReviewIds++;
+                    continue;
+                }
+
+                String normalizedProduct = normalize(product);
+                String normalizedText = normalize(reviewText);
+                String contentKey = normalizedProduct + "\u001f" + normalizedText;
+                if (!seenProductReviews.add(contentKey)) {
+                    skippedReviews++;
                     duplicateReviews++;
                     continue;
                 }
 
-                // Parse rating; invalid or missing means null
-                Integer rating = null;
-
-                try {
-                    int parsedRating = Integer.parseInt(ratingText);
-
-                    if (parsedRating >= 1 && parsedRating <= 5) {
-                        rating = parsedRating;
-                    }
-
-                } catch (NumberFormatException exception) {
-                    rating = null;
-                }
-
-                // Parse date safely
-                LocalDate reviewDate = null;
-
-                try {
-                    reviewDate = LocalDate.parse(dateText);
-                } catch (Exception exception) {
-                    reviewDate = null;
-                }
-
-                Review review = new Review(
-                        reviewId,
-                        product,
-                        rating,
-                        reviewText,
-                        reviewDate
-                );
-
-                reviews.add(review);
+                Integer rating = parseRating(value(record, "rating"));
+                LocalDate reviewDate = parseDate(value(record, "date"));
+                reviews.add(new Review(
+                        reviewId, product, rating, reviewText, reviewDate));
             }
         }
 
         return new CsvProcessingResult(
-                reviews,
-                totalRows,
-                reviews.size(),
-                skippedReviews,
-                duplicateReviews
-        );
+                reviews, totalRows, reviews.size(), skippedReviews,
+                duplicateReviews, invalidReviews, duplicateReviewIds);
+    }
+
+    private String value(CSVRecord record, String column) {
+        try {
+            String value = record.get(column);
+            return value == null ? "" : value.strip();
+        } catch (IllegalArgumentException | IndexOutOfBoundsException exception) {
+            return "";
+        }
+    }
+
+    private String normalize(String value) {
+        return value.replaceAll("\\s+", " ").strip().toLowerCase(Locale.ROOT);
+    }
+
+    private Integer parseRating(String value) {
+        try {
+            int rating = Integer.parseInt(value);
+            return rating >= 1 && rating <= 5 ? rating : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
+    private LocalDate parseDate(String value) {
+        try {
+            return LocalDate.parse(value);
+        } catch (RuntimeException exception) {
+            return null;
+        }
     }
 }

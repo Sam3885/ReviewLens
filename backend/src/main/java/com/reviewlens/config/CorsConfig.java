@@ -1,4 +1,3 @@
-
 package com.reviewlens.config;
 
 import org.springframework.context.annotation.Bean;
@@ -16,7 +15,7 @@ public class CorsConfig {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
                 registry.addMapping("/**")
-                        .allowedOrigins("https://hoppscotch.io")
+                        .allowedOrigins("http://localhost:5173")
                         .allowedMethods(
                                 "GET",
                                 "POST",
